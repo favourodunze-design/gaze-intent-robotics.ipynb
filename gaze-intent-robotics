@@ -1,0 +1,360 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "c5a6ea4b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:53.695387Z",
+     "iopub.status.busy": "2026-04-28T18:00:53.694508Z",
+     "iopub.status.idle": "2026-04-28T18:00:57.143181Z",
+     "shell.execute_reply": "2026-04-28T18:00:57.142249Z"
+    },
+    "papermill": {
+     "duration": 3.456415,
+     "end_time": "2026-04-28T18:00:57.145268+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:53.688853+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "import torch\n",
+    "import torch.nn as nn\n",
+    "import torch.optim as optim\n",
+    "import numpy as np"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "6869e91f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:57.151210Z",
+     "iopub.status.busy": "2026-04-28T18:00:57.150717Z",
+     "iopub.status.idle": "2026-04-28T18:00:57.193149Z",
+     "shell.execute_reply": "2026-04-28T18:00:57.192107Z"
+    },
+    "papermill": {
+     "duration": 0.047826,
+     "end_time": "2026-04-28T18:00:57.195293+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:57.147467+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "class SyntheticDataset(torch.utils.data.Dataset):\n",
+    "    def __init__(self, n_samples=10000):\n",
+    "        self.n = n_samples\n",
+    "        \n",
+    "        # Vision features (like CNN output)\n",
+    "        self.images = torch.randn(n_samples, 128)\n",
+    "        \n",
+    "        # Language embeddings\n",
+    "        self.text = torch.randn(n_samples, 64)\n",
+    "        \n",
+    "        # Intention (gaze point: x, y)\n",
+    "        self.intentions = torch.randn(n_samples, 2)\n",
+    "        \n",
+    "        # Actions (robot control vector)\n",
+    "        self.actions = torch.randn(n_samples, 8)\n",
+    "\n",
+    "    def __len__(self):\n",
+    "        return self.n\n",
+    "\n",
+    "    def __getitem__(self, idx):\n",
+    "        return (\n",
+    "            self.images[idx],\n",
+    "            self.text[idx],\n",
+    "            self.intentions[idx],\n",
+    "            self.actions[idx]\n",
+    "        )\n",
+    "\n",
+    "dataset = SyntheticDataset()\n",
+    "dataloader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "1da51998",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:57.200745Z",
+     "iopub.status.busy": "2026-04-28T18:00:57.200432Z",
+     "iopub.status.idle": "2026-04-28T18:00:57.206296Z",
+     "shell.execute_reply": "2026-04-28T18:00:57.205401Z"
+    },
+    "papermill": {
+     "duration": 0.010857,
+     "end_time": "2026-04-28T18:00:57.208066+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:57.197209+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "class IntentionNet(nn.Module):\n",
+    "    def __init__(self):\n",
+    "        super().__init__()\n",
+    "        self.net = nn.Sequential(\n",
+    "            nn.Linear(128 + 64, 128),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(128, 2)  # gaze (x, y)\n",
+    "        )\n",
+    "    \n",
+    "    def forward(self, img, txt):\n",
+    "        x = torch.cat([img, txt], dim=-1)\n",
+    "        return self.net(x)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "d053cdb5",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:57.213467Z",
+     "iopub.status.busy": "2026-04-28T18:00:57.213170Z",
+     "iopub.status.idle": "2026-04-28T18:00:57.219059Z",
+     "shell.execute_reply": "2026-04-28T18:00:57.218265Z"
+    },
+    "papermill": {
+     "duration": 0.010825,
+     "end_time": "2026-04-28T18:00:57.220946+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:57.210121+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "class ActionNet(nn.Module):\n",
+    "    def __init__(self):\n",
+    "        super().__init__()\n",
+    "        self.net = nn.Sequential(\n",
+    "            nn.Linear(128 + 64 + 2, 128),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(128, 8)\n",
+    "        )\n",
+    "    \n",
+    "    def forward(self, img, txt, intention):\n",
+    "        x = torch.cat([img, txt, intention], dim=-1)\n",
+    "        return self.net(x)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "0f1c6a9e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:57.226316Z",
+     "iopub.status.busy": "2026-04-28T18:00:57.225977Z",
+     "iopub.status.idle": "2026-04-28T18:00:57.231447Z",
+     "shell.execute_reply": "2026-04-28T18:00:57.230617Z"
+    },
+    "papermill": {
+     "duration": 0.010221,
+     "end_time": "2026-04-28T18:00:57.233133+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:57.222912+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "class VLIA(nn.Module):\n",
+    "    def __init__(self):\n",
+    "        super().__init__()\n",
+    "        self.intention_net = IntentionNet()\n",
+    "        self.action_net = ActionNet()\n",
+    "    \n",
+    "    def forward(self, img, txt):\n",
+    "        intention = self.intention_net(img, txt)\n",
+    "        action = self.action_net(img, txt, intention)\n",
+    "        return intention, action"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "0743f046",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:00:57.238619Z",
+     "iopub.status.busy": "2026-04-28T18:00:57.238286Z",
+     "iopub.status.idle": "2026-04-28T18:01:03.209770Z",
+     "shell.execute_reply": "2026-04-28T18:01:03.208725Z"
+    },
+    "papermill": {
+     "duration": 5.976785,
+     "end_time": "2026-04-28T18:01:03.211884+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:00:57.235099+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "model = VLIA()\n",
+    "\n",
+    "criterion_intent = nn.MSELoss()\n",
+    "criterion_action = nn.MSELoss()\n",
+    "\n",
+    "optimizer = optim.Adam(model.parameters(), lr=1e-3)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "4b71cf99",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:01:03.217396Z",
+     "iopub.status.busy": "2026-04-28T18:01:03.216936Z",
+     "iopub.status.idle": "2026-04-28T18:01:05.668645Z",
+     "shell.execute_reply": "2026-04-28T18:01:05.667241Z"
+    },
+    "papermill": {
+     "duration": 2.456839,
+     "end_time": "2026-04-28T18:01:05.670706+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:01:03.213867+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Epoch 1, Loss: 176.9122\n",
+      "Epoch 2, Loss: 169.1853\n",
+      "Epoch 3, Loss: 165.4650\n",
+      "Epoch 4, Loss: 161.3149\n",
+      "Epoch 5, Loss: 156.8110\n"
+     ]
+    }
+   ],
+   "source": [
+    "for epoch in range(5):\n",
+    "    total_loss = 0\n",
+    "    \n",
+    "    for img, txt, intent_gt, action_gt in dataloader:\n",
+    "        pred_intent, pred_action = model(img, txt)\n",
+    "        \n",
+    "        loss_intent = criterion_intent(pred_intent, intent_gt)\n",
+    "        loss_action = criterion_action(pred_action, action_gt)\n",
+    "        \n",
+    "        # Weighted loss (paper uses λ weighting)\n",
+    "        loss = loss_action + 0.1 * loss_intent\n",
+    "        \n",
+    "        optimizer.zero_grad()\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "        \n",
+    "        total_loss += loss.item()\n",
+    "    \n",
+    "    print(f\"Epoch {epoch+1}, Loss: {total_loss:.4f}\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "c5b5f22c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2026-04-28T18:01:05.677059Z",
+     "iopub.status.busy": "2026-04-28T18:01:05.676705Z",
+     "iopub.status.idle": "2026-04-28T18:01:05.703548Z",
+     "shell.execute_reply": "2026-04-28T18:01:05.702417Z"
+    },
+    "papermill": {
+     "duration": 0.032417,
+     "end_time": "2026-04-28T18:01:05.705647+00:00",
+     "exception": false,
+     "start_time": "2026-04-28T18:01:05.673230+00:00",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Predicted Intention (gaze): tensor([[ 0.1441, -0.2466]])\n",
+      "Predicted Action: tensor([[ 0.5882, -0.0700,  0.0716, -0.0030,  0.2950, -0.0887,  0.2155, -0.1294]])\n"
+     ]
+    }
+   ],
+   "source": [
+    "model.eval()\n",
+    "\n",
+    "img, txt, _, _ = dataset[0]\n",
+    "\n",
+    "with torch.no_grad():\n",
+    "    pred_intent, pred_action = model(img.unsqueeze(0), txt.unsqueeze(0))\n",
+    "\n",
+    "print(\"Predicted Intention (gaze):\", pred_intent)\n",
+    "print(\"Predicted Action:\", pred_action)\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "none",
+   "dataSources": [],
+   "dockerImageVersionId": 31328,
+   "isGpuEnabled": false,
+   "isInternetEnabled": false,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.12.12"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 16.673118,
+   "end_time": "2026-04-28T18:01:06.930012+00:00",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2026-04-28T18:00:50.256894+00:00",
+   "version": "2.7.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
